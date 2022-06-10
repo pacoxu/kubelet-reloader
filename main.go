@@ -28,13 +28,23 @@ import (
 )
 
 const (
-	kubeletBinPath    = "/usr/bin/kubelet"
-	kubeletNewBinPath = "/usr/bin/kubelet-new"
+	kubeletBinPath           = "/usr/bin/kubelet"
+	defaultKubeletNewBinPath = "/usr/bin/kubelet-new"
 )
 
-var watchedFiles = []string{
-	// kubeletBinPath,
-	kubeletNewBinPath,
+var (
+	watchedFiles = []string{
+		// kubeletBinPath,
+		getKubeletNewBinPath(),
+	}
+)
+
+func getKubeletNewBinPath() string {
+	kubeletNewBinPath := os.Getenv("NEW_KUBELET_PATH")
+	if kubeletNewBinPath == "" {
+		return defaultKubeletNewBinPath
+	}
+	return kubeletNewBinPath
 }
 
 type cmd struct {
@@ -98,7 +108,7 @@ func (c *cmd) runInnnerCommand() error {
 }
 
 func getKubeletVersion(filepath string) (string, error) {
-	cmd := newCmd(filepath, "version")
+	cmd := newCmd(filepath, "--version")
 
 	lines, err := cmd.RunAndCapture()
 	if err != nil {
@@ -114,19 +124,19 @@ func isChanged() bool {
 		return false
 	}
 	fmt.Printf("Kubelet binary version: %s \n", kubeletVersion)
-	kubeletNewVersion, err := getKubeletVersion(kubeletNewBinPath)
+	kubeletNewVersion, err := getKubeletVersion(getKubeletNewBinPath())
 	if err != nil {
 		fmt.Printf("Kubelet new binary get version Error : %v \n", err)
 		return false
 	}
-	fmt.Printf("Kubelet binary version: %s \n", kubeletNewVersion)
+	fmt.Printf("Kubelet new binary version: %s \n", kubeletNewVersion)
 	return kubeletVersion != kubeletNewVersion
 }
 
 func replaceKubelet() {
 	fmt.Printf("Replace kubelet with kubelet-new \n")
 
-	cmd := exec.Command("/usr/bin/cp", "-f", kubeletNewBinPath, kubeletBinPath)
+	cmd := exec.Command("/usr/bin/cp", "-f", getKubeletNewBinPath(), kubeletBinPath)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {

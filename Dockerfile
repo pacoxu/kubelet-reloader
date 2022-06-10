@@ -1,7 +1,7 @@
 #
 # build
 #
-FROM golang:1.18.3 AS builder
+FROM docker.m.daocloud.io/library/golang:1.18.3 AS builder
 
 WORKDIR /workspace
 # Copy the Go Modules manifests
