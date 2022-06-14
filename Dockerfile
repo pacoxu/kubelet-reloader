@@ -3,6 +3,7 @@
 #
 FROM docker.m.daocloud.io/library/golang:1.18.3 AS builder
 
+ENV GOPROXY https://goproxy.cn
 WORKDIR /workspace
 # Copy the Go Modules manifests
 COPY go.mod go.mod

@@ -25,6 +25,7 @@ import (
 
 	"github.com/pkg/errors"
 	"gopkg.in/fsnotify.v1"
+	"k8s.io/apimachinery/pkg/util/wait"
 )
 
 const (
@@ -133,29 +134,33 @@ func isChanged() bool {
 	return kubeletVersion != kubeletNewVersion
 }
 
-func replaceKubelet() {
+func replaceKubelet() error {
 	fmt.Printf("Replace kubelet with kubelet-new \n")
 
 	cmd := exec.Command("/usr/bin/cp", "-f", getKubeletNewBinPath(), kubeletBinPath)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
+	err := cmd.Run()
+	if err != nil {
 		fmt.Printf("Cp replace Error : %v \n", err)
 	}
+	return err
 }
 
-func stopKubelet() {
+func stopKubelet() error {
 	_, err := exec.Command("systemctl", "stop", "kubelet").Output()
 	if err != nil {
 		fmt.Sprintf("Failed to execute command: systemctl stop kubelet")
 	}
+	return err
 }
 
-func restartKubelet() {
+func restartKubelet() error {
 	_, err := exec.Command("systemctl", "restart", "kubelet").Output()
 	if err != nil {
 		fmt.Sprintf("Failed to execute command: systemctl restart kubelet")
 	}
+	return err
 }
 
 func main() {
@@ -189,16 +194,16 @@ func main() {
 		select {
 		case flag := <-newKubeletBin:
 			if flag {
-				stopKubelet()
-				replaceKubelet()
-				restartKubelet()
+				wait.Poll(1*time.Second, 60*time.Second, func() (bool, error) {
+					return kubeletReplaceAndRestart()
+				})
 			}
 		case event := <-fswatcher.Events:
 			if fsnotify.Create == event.Op || fsnotify.Write == event.Op || fsnotify.Remove == event.Op || fsnotify.Rename == event.Op {
 				if isChanged() {
-					stopKubelet()
-					replaceKubelet()
-					restartKubelet()
+					wait.Poll(1*time.Second, 60*time.Second, func() (bool, error) {
+						return kubeletReplaceAndRestart()
+					})
 				}
 			}
 		case err := <-fswatcher.Errors:
@@ -206,4 +211,20 @@ func main() {
 			os.Exit(1)
 		}
 	}
+}
+
+func kubeletReplaceAndRestart() (bool, error) {
+	waitErr := stopKubelet()
+	if waitErr != nil {
+		return false, waitErr
+	}
+	waitErr = replaceKubelet()
+	if waitErr != nil {
+		return false, waitErr
+	}
+	waitErr = restartKubelet()
+	if waitErr != nil {
+		return false, waitErr
+	}
+	return true, nil
 }
