@@ -1,5 +1,6 @@
 # kubelet-reloader
-a simple reloader to check kubelet status and restart it when running version is different with current version
+This binary is for https://github.com/pacoxu/kubeadm-operator.
+It is a simple reloader to check kubelet status and restart it when running version is different with current version
 
 - kubelet-reloader will watch on /usr/bin/kubelet-new.
 - once there is different version `kubelet-new`, the reloader will replace `/usr/bin/kubelet` and restart kubelet.
