@@ -4,6 +4,7 @@ It is a simple reloader to check kubelet status and restart it when running vers
 
 - kubelet-reloader will watch on /usr/bin/kubelet-new.
 - once there is different version `kubelet-new`, the reloader will replace `/usr/bin/kubelet` and restart kubelet.
+- if `kubelet.service` needs `systemctl daemon-reload`, the reloader will warn and hold replacement/restart until units are reloaded.
 
 ### Quick Start
 

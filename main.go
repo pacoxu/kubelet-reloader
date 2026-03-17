@@ -31,6 +31,7 @@ import (
 const (
 	kubeletBinPath           = "/usr/bin/kubelet"
 	defaultKubeletNewBinPath = "/usr/bin/kubelet-new"
+	daemonReloadWarning      = "Warning: kubelet.service needs `systemctl daemon-reload`; skipping kubelet replace/restart until units are reloaded."
 )
 
 var (
@@ -148,19 +149,49 @@ func replaceKubelet() error {
 }
 
 func stopKubelet() error {
-	_, err := exec.Command("systemctl", "stop", "kubelet").Output()
-	if err != nil {
-		fmt.Sprintf("Failed to execute command: systemctl stop kubelet")
-	}
-	return err
+	return runSystemctl("stop", "kubelet")
 }
 
 func restartKubelet() error {
-	_, err := exec.Command("systemctl", "restart", "kubelet").Output()
+	return runSystemctl("restart", "kubelet")
+}
+
+func runSystemctl(args ...string) error {
+	output, err := exec.Command("systemctl", args...).CombinedOutput()
 	if err != nil {
-		fmt.Sprintf("Failed to execute command: systemctl restart kubelet")
+		commandLine := strings.Join(args, " ")
+		cmdErr := fmt.Sprintf("Failed to execute command: systemctl %s", commandLine)
+		outputText := strings.TrimSpace(string(output))
+		if outputText == "" {
+			return errors.WithMessage(err, cmdErr)
+		}
+		return errors.WithMessage(err, fmt.Sprintf("%s; output: %s", cmdErr, outputText))
 	}
-	return err
+	return nil
+}
+
+func isDaemonReloadRequired() (bool, error) {
+	output, err := exec.Command("systemctl", "show", "--property", "NeedDaemonReload", "--value", "kubelet").CombinedOutput()
+	if err != nil {
+		outputText := strings.TrimSpace(string(output))
+		if outputText == "" {
+			return false, errors.WithMessage(err, "Failed to check whether kubelet.service needs daemon-reload")
+		}
+		return false, errors.WithMessage(err, fmt.Sprintf("Failed to check whether kubelet.service needs daemon-reload; output: %s", outputText))
+	}
+	needDaemonReload := strings.TrimSpace(string(output))
+	return strings.EqualFold(needDaemonReload, "yes"), nil
+}
+
+func isDaemonReloadHint(text string) bool {
+	return strings.Contains(strings.ToLower(text), "daemon-reload")
+}
+
+func shouldHoldForDaemonReload(err error) bool {
+	if err == nil {
+		return false
+	}
+	return isDaemonReloadHint(err.Error())
 }
 
 func main() {
@@ -214,8 +245,21 @@ func main() {
 }
 
 func kubeletReplaceAndRestart() (bool, error) {
+	needReload, err := isDaemonReloadRequired()
+	if err != nil {
+		return false, err
+	}
+	if needReload {
+		fmt.Println(daemonReloadWarning)
+		return true, nil
+	}
+
 	waitErr := stopKubelet()
 	if waitErr != nil {
+		if shouldHoldForDaemonReload(waitErr) {
+			fmt.Println(daemonReloadWarning)
+			return true, nil
+		}
 		return false, waitErr
 	}
 	waitErr = replaceKubelet()
@@ -224,6 +268,10 @@ func kubeletReplaceAndRestart() (bool, error) {
 	}
 	waitErr = restartKubelet()
 	if waitErr != nil {
+		if shouldHoldForDaemonReload(waitErr) {
+			fmt.Println(daemonReloadWarning)
+			return true, nil
+		}
 		return false, waitErr
 	}
 	return true, nil
